@@ -5,10 +5,8 @@ import numpy as np
 import random
 from PIL import Image
 from torchvision import transforms
-import tempfile
 from facenet_pytorch import MTCNN
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
+import matplotlib.pyplot as plt
 
 # ---------------- FIX RANDOMNESS ----------------
 torch.manual_seed(0)
@@ -54,7 +52,6 @@ def detect_face(image):
         return None
 
     x1,y1,x2,y2 = boxes[0].astype(int)
-
     face = image.crop((x1,y1,x2,y2))
 
     return face
@@ -70,73 +67,105 @@ def predict(model,image):
 
     return prob[0][0].item(), prob[0][1].item()
 
-# ---------------- GRAD CAM ----------------
-def generate_gradcam(model, face_img):
+# ---------------- CUSTOM GRAD-CAM (NO CV2) ----------------
+def generate_gradcam(model, image):
 
-    input_tensor = transform(face_img).unsqueeze(0).to(device)
+    model.eval()
 
-    cam = GradCAM(model=model, target_layers=[model.conv_head])
+    gradients = []
+    activations = []
 
-    grayscale_cam = cam(input_tensor=input_tensor)[0]
+    def backward_hook(module, grad_in, grad_out):
+        gradients.append(grad_out[0])
 
-    face_np = np.array(face_img.resize((160,160))) / 255.0
+    def forward_hook(module, input, output):
+        activations.append(output)
 
-    visualization = show_cam_on_image(face_np, grayscale_cam, use_rgb=True)
+    # Hook last conv layer
+    target_layer = model.conv_head
 
-    return visualization
+    handle_f = target_layer.register_forward_hook(forward_hook)
+    handle_b = target_layer.register_backward_hook(backward_hook)
+
+    input_tensor = transform(image).unsqueeze(0).to(device)
+
+    output = model(input_tensor)
+    class_idx = output.argmax()
+
+    model.zero_grad()
+    output[0, class_idx].backward()
+
+    grads = gradients[0]
+    acts = activations[0]
+
+    weights = grads.mean(dim=(2,3), keepdim=True)
+    cam = (weights * acts).sum(dim=1, keepdim=True)
+
+    cam = torch.relu(cam)
+    cam = cam.squeeze().cpu().detach().numpy()
+
+    cam = (cam - cam.min()) / (cam.max() + 1e-8)
+
+    handle_f.remove()
+    handle_b.remove()
+
+    # Convert to heatmap
+    heatmap = Image.fromarray(np.uint8(255 * cam)).resize((160,160))
+    heatmap = np.array(heatmap) / 255.0
+
+    img_np = np.array(image.resize((160,160))) / 255.0
+
+    # Overlay
+    overlay = 0.6 * img_np + 0.4 * np.stack([heatmap]*3, axis=-1)
+
+    return overlay
 
 # ---------------- UI ----------------
 st.title("Deepfake Detection System")
 
-model_choice = st.selectbox("Select Model", ["XceptionNet","EfficientNet","Grad-CAM"])
-
-if model_choice == "Grad-CAM":
-    detection_type = "Image"
-else:
-    detection_type = st.selectbox("Detection Type", ["Image","Video"])
+model_choice = st.selectbox(
+    "Select Mode",
+    ["EfficientNet","XceptionNet","Grad-CAM"]
+)
 
 st.divider()
 
-# ---------------- IMAGE ----------------
-if detection_type == "Image":
+file = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
 
-    file = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
+if file:
 
-    if file:
+    image = Image.open(file).convert("RGB")
+    st.image(image, width=400)
 
-        image = Image.open(file).convert("RGB")
+    face = detect_face(image)
 
-        st.image(image, width=400)
+    if face is None:
+        st.warning("No face detected")
+        st.stop()
 
-        face = detect_face(image)
+    if st.button("Run"):
 
-        if face is None:
-            st.warning("No face detected")
-            st.stop()
+        if model_choice == "Grad-CAM":
 
-        if st.button("Run"):
+            cam_img = generate_gradcam(efficient_model, face)
 
-            if model_choice == "Grad-CAM":
-                cam_img = generate_gradcam(efficient_model, face)
-                st.image(cam_img, width=400)
+            st.subheader("Grad-CAM Visualization")
+            st.image(cam_img, width=400)
 
+        else:
+
+            model = efficient_model if model_choice=="EfficientNet" else xception_model
+
+            fake, real = predict(model, face)
+
+            st.subheader("Prediction")
+
+            c1,c2 = st.columns(2)
+
+            c1.metric("Fake", round(fake,3))
+            c2.metric("Real", round(real,3))
+
+            if fake > real:
+                st.error("Fake Image")
             else:
-                model = efficient_model if model_choice=="EfficientNet" else xception_model
-                fake, real = predict(model, face)
-
-                st.metric("Fake", round(fake,3))
-                st.metric("Real", round(real,3))
-
-                if fake > real:
-                    st.error("Fake Image")
-                else:
-                    st.success("Real Image")
-
-# ---------------- VIDEO ----------------
-if detection_type == "Video":
-
-    file = st.file_uploader("Upload Video", type=["mp4"])
-
-    if file:
-
-        st.warning("Video mode requires OpenCV → not supported in deployment")
+                st.success("Real Image")
