@@ -5,12 +5,12 @@ import numpy as np
 import random
 from PIL import Image
 from torchvision import transforms
-from torchvision.io import read_video
 from facenet_pytorch import MTCNN
 import matplotlib.cm as cm
 import gdown
 import os
 import tempfile
+import imageio.v2 as imageio   # ✅ IMPORTANT FIX
 
 # ---------------- FIX RANDOMNESS ----------------
 torch.manual_seed(0)
@@ -115,6 +115,7 @@ def generate_gradcam(model, image):
     handle_f.remove()
     handle_b.remove()
 
+    # Heatmap fix
     heatmap = cm.jet(cam)[:, :, :3]
     heatmap = np.array(
         Image.fromarray((heatmap * 255).astype(np.uint8)).resize((160,160))
@@ -130,16 +131,25 @@ def generate_gradcam(model, image):
 # ---------------- VIDEO FRAME EXTRACTION ----------------
 def extract_frames(video_path, num_frames=20):
 
-    video, _, _ = read_video(video_path, pts_unit='sec')
+    reader = imageio.get_reader(video_path, "ffmpeg")
 
-    total = video.shape[0]
+    try:
+        total = reader.count_frames()
+    except:
+        total = 100  # fallback
+
     ids = np.linspace(0, total-1, num_frames).astype(int)
 
     frames = []
-    for i in ids:
-        frame = video[i].numpy()
-        frames.append(Image.fromarray(frame))
 
+    for i in ids:
+        try:
+            frame = reader.get_data(i)
+            frames.append(Image.fromarray(frame))
+        except:
+            continue
+
+    reader.close()
     return frames
 
 # ---------------- UI ----------------
