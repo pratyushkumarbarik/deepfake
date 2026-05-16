@@ -10,7 +10,7 @@ import matplotlib.cm as cm
 import gdown
 import os
 import tempfile
-import imageio.v2 as imageio
+import imageio.v2 as imageio   # ✅ FINAL FIX
 
 # ---------------- FIX RANDOMNESS ----------------
 torch.manual_seed(0)
@@ -130,23 +130,18 @@ def generate_gradcam(model, image):
 # ---------------- VIDEO FRAME EXTRACTION (FINAL FIX) ----------------
 def extract_frames(video_path, num_frames=20):
 
-    reader = imageio.get_reader(video_path, "ffmpeg")
-
     frames = []
-    count = 0
 
     try:
-        for frame in reader:
+        for i, frame in enumerate(imageio.imiter(video_path)):
             frames.append(Image.fromarray(frame))
-            count += 1
 
-            if count >= num_frames:
+            if len(frames) >= num_frames:
                 break
 
-    except:
-        pass
+    except Exception as e:
+        print("Video error:", e)
 
-    reader.close()
     return frames
 
 # ---------------- UI ----------------
