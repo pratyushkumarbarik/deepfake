@@ -1,5 +1,0 @@
-[server]
-headless = true
-
-[runner]
-pythonVersion = "3.10"
