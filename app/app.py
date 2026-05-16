@@ -6,11 +6,11 @@ import random
 from PIL import Image
 from torchvision import transforms
 from facenet_pytorch import MTCNN
-import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import gdown
 import os
 import imageio
+import tempfile
 
 # ---------------- FIX RANDOMNESS ----------------
 torch.manual_seed(0)
@@ -85,7 +85,7 @@ def predict(model,image):
 
     return prob[0][0].item(), prob[0][1].item()
 
-# ---------------- CUSTOM GRAD-CAM ----------------
+# ---------------- FIXED GRAD-CAM ----------------
 def generate_gradcam(model, image):
 
     gradients = []
@@ -123,7 +123,12 @@ def generate_gradcam(model, image):
     handle_f.remove()
     handle_b.remove()
 
+    # 🔥 FIXED HEATMAP
     heatmap_color = cm.jet(cam)[:, :, :3]
+
+    heatmap_color = np.array(
+        Image.fromarray((heatmap_color * 255).astype(np.uint8)).resize((160,160))
+    ) / 255.0
 
     img_np = np.array(image.resize((160,160))) / 255.0
 
@@ -133,11 +138,11 @@ def generate_gradcam(model, image):
     return overlay
 
 # ---------------- VIDEO FRAME EXTRACTION ----------------
-def extract_frames(video_file, num_frames=20):
+def extract_frames(video_path, num_frames=20):
 
-    reader = imageio.get_reader(video_file)
+    reader = imageio.get_reader(video_path)
+
     total = reader.count_frames()
-
     ids = np.linspace(0, total-1, num_frames).astype(int)
 
     frames = []
@@ -214,11 +219,15 @@ if detection_type == "Video":
 
     if file:
 
-        st.video(file)
+        # 🔥 FIX: convert to temp file
+        tfile = tempfile.NamedTemporaryFile(delete=False)
+        tfile.write(file.read())
+
+        st.video(tfile.name)
 
         if st.button("Detect Video"):
 
-            frames = extract_frames(file)
+            frames = extract_frames(tfile.name)
 
             fake_scores = []
             real_scores = []
