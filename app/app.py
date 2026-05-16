@@ -121,7 +121,7 @@ def generate_gradcam(model, image):
     handle_f.remove()
     handle_b.remove()
 
-    # ✅ FIXED HEATMAP
+    # ✅ Heatmap fix
     heatmap = cm.jet(cam)[:, :, :3]
     heatmap = np.array(
         Image.fromarray((heatmap * 255).astype(np.uint8)).resize((160,160))
@@ -137,7 +137,7 @@ def generate_gradcam(model, image):
 # ---------------- VIDEO FRAME EXTRACTION ----------------
 def extract_frames(video_path, num_frames=20):
 
-    reader = imageio.get_reader(video_path)
+    reader = imageio.get_reader(video_path, format='ffmpeg')  # ✅ FINAL FIX
 
     total = reader.count_frames()
     ids = np.linspace(0, total-1, num_frames).astype(int)
@@ -148,6 +148,7 @@ def extract_frames(video_path, num_frames=20):
         frame = reader.get_data(i)
         frames.append(Image.fromarray(frame))
 
+    reader.close()
     return frames
 
 # ---------------- UI ----------------
@@ -222,7 +223,7 @@ if detection_type == "Video":
 
         if st.button("Detect Video"):
 
-            frames = extract_frames(tfile.name)  # ✅ FINAL FIX
+            frames = extract_frames(tfile.name)
 
             fake_scores = []
             real_scores = []
