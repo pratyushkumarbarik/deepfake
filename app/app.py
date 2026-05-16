@@ -10,7 +10,7 @@ import matplotlib.cm as cm
 import gdown
 import os
 import tempfile
-import imageio.v2 as imageio   # ✅ FINAL FIX
+import imageio.v2 as imageio
 
 # ---------------- FIX RANDOMNESS ----------------
 torch.manual_seed(0)
@@ -132,15 +132,30 @@ def extract_frames(video_path, num_frames=20):
 
     frames = []
 
+    # 🔥 Primary method
     try:
-        for i, frame in enumerate(imageio.imiter(video_path)):
+        reader = imageio.get_reader(video_path, "ffmpeg")
+
+        for frame in reader:
             frames.append(Image.fromarray(frame))
 
             if len(frames) >= num_frames:
                 break
 
+        reader.close()
+
     except Exception as e:
-        print("Video error:", e)
+        print("Primary read failed:", e)
+
+        # 🔥 Fallback method
+        try:
+            for frame in imageio.imiter(video_path):
+                frames.append(Image.fromarray(frame))
+
+                if len(frames) >= num_frames:
+                    break
+        except Exception as e:
+            print("Fallback failed:", e)
 
     return frames
 
@@ -218,7 +233,7 @@ if detection_type == "Video":
             frames = extract_frames(tfile.name)
 
             if len(frames) == 0:
-                st.error("Video could not be processed")
+                st.error("Video could not be processed (try another video)")
                 st.stop()
 
             fake_scores = []
