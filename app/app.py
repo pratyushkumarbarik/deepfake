@@ -10,7 +10,7 @@ import matplotlib.cm as cm
 import gdown
 import os
 import tempfile
-import imageio.v2 as imageio
+import cv2  # ✅ FINAL FIX
 
 # ---------------- FIX RANDOMNESS ----------------
 torch.manual_seed(0)
@@ -61,7 +61,6 @@ transform = transforms.Compose([
 # ---------------- FACE DETECTOR ----------------
 face_detector = MTCNN(image_size=160, margin=10, device=device)
 
-# ---------------- FACE DETECTION ----------------
 def detect_face(image):
     boxes, _ = face_detector.detect(image)
     if boxes is None:
@@ -130,33 +129,31 @@ def generate_gradcam(model, image):
 # ---------------- VIDEO FRAME EXTRACTION (FINAL FIX) ----------------
 def extract_frames(video_path, num_frames=20):
 
+    cap = cv2.VideoCapture(video_path)
+
+    if not cap.isOpened():
+        return []
+
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    if total == 0:
+        return []
+
+    ids = np.linspace(0, total-1, num_frames).astype(int)
+
     frames = []
 
-    # 🔥 Primary method
-    try:
-        reader = imageio.get_reader(video_path, "ffmpeg")
+    for i in ids:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(i))
+        ret, frame = cap.read()
 
-        for frame in reader:
-            frames.append(Image.fromarray(frame))
+        if not ret:
+            continue
 
-            if len(frames) >= num_frames:
-                break
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frames.append(Image.fromarray(frame))
 
-        reader.close()
-
-    except Exception as e:
-        print("Primary read failed:", e)
-
-        # 🔥 Fallback method
-        try:
-            for frame in imageio.imiter(video_path):
-                frames.append(Image.fromarray(frame))
-
-                if len(frames) >= num_frames:
-                    break
-        except Exception as e:
-            print("Fallback failed:", e)
-
+    cap.release()
     return frames
 
 # ---------------- UI ----------------
@@ -195,21 +192,15 @@ if detection_type == "Image":
             if model_choice == "Grad-CAM":
 
                 cam_img = generate_gradcam(efficient_model, face)
-
-                st.subheader("Grad-CAM Visualization")
                 st.image(cam_img, width=400)
 
             else:
 
                 model = efficient_model if model_choice=="EfficientNet" else xception_model
-
                 fake, real = predict(model, face)
 
-                st.subheader("Prediction")
-
-                c1,c2 = st.columns(2)
-                c1.metric("Fake Probability", round(fake,3))
-                c2.metric("Real Probability", round(real,3))
+                st.metric("Fake", round(fake,3))
+                st.metric("Real", round(real,3))
 
                 if fake > real:
                     st.error("Fake Image")
@@ -233,7 +224,7 @@ if detection_type == "Video":
             frames = extract_frames(tfile.name)
 
             if len(frames) == 0:
-                st.error("Video could not be processed (try another video)")
+                st.error("Video processing failed")
                 st.stop()
 
             fake_scores = []
@@ -242,12 +233,10 @@ if detection_type == "Video":
             for frame in frames:
 
                 face = detect_face(frame)
-
                 if face is None:
                     continue
 
                 model = efficient_model if model_choice=="EfficientNet" else xception_model
-
                 fake, real = predict(model, face)
 
                 fake_scores.append(fake)
@@ -260,11 +249,8 @@ if detection_type == "Video":
             fake_avg = np.mean(fake_scores)
             real_avg = np.mean(real_scores)
 
-            st.subheader("Prediction")
-
-            c1,c2 = st.columns(2)
-            c1.metric("Fake Probability", round(fake_avg,3))
-            c2.metric("Real Probability", round(real_avg,3))
+            st.metric("Fake", round(fake_avg,3))
+            st.metric("Real", round(real_avg,3))
 
             if fake_avg > real_avg:
                 st.error("Fake Video")
