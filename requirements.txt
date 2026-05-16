@@ -9,3 +9,4 @@ scikit-learn
 Pillow
 matplotlib
 gdown
+imageio
