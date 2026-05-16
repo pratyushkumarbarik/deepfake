@@ -7,6 +7,8 @@ from PIL import Image
 from torchvision import transforms
 from facenet_pytorch import MTCNN
 import matplotlib.pyplot as plt
+import gdown
+import os
 
 # ---------------- FIX RANDOMNESS ----------------
 torch.manual_seed(0)
@@ -17,16 +19,33 @@ st.set_page_config(page_title="Deepfake Detection", layout="wide")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ---------------- MODEL LOADING ----------------
+# ---------------- DOWNLOAD + LOAD MODELS ----------------
 @st.cache_resource
 def load_models():
 
+    # Download only if not already present
+    if not os.path.exists("efficientnet.pth"):
+        gdown.download(
+            "https://drive.google.com/uc?id=1uufNBM-cjvQFRDA1eber_FYqb_bBRV4C",
+            "efficientnet.pth",
+            quiet=False
+        )
+
+    if not os.path.exists("xception.pth"):
+        gdown.download(
+            "https://drive.google.com/uc?id=1ZlvAT2nfqPgeyhHP37OcNf8s68uvjD7d",
+            "xception.pth",
+            quiet=False
+        )
+
+    # Load EfficientNet
     efficient_model = timm.create_model("efficientnet_b0", pretrained=False, num_classes=2)
-    efficient_model.load_state_dict(torch.load("efficientnet_faces_fina2.pth", map_location=device))
+    efficient_model.load_state_dict(torch.load("efficientnet.pth", map_location=device))
     efficient_model.to(device).eval()
 
+    # Load Xception
     xception_model = timm.create_model("xception", pretrained=False, num_classes=2)
-    xception_model.load_state_dict(torch.load("xception_deepfake_final.pth", map_location=device))
+    xception_model.load_state_dict(torch.load("xception.pth", map_location=device))
     xception_model.to(device).eval()
 
     return efficient_model, xception_model
@@ -67,7 +86,7 @@ def predict(model,image):
 
     return prob[0][0].item(), prob[0][1].item()
 
-# ---------------- CUSTOM GRAD-CAM (NO CV2) ----------------
+# ---------------- CUSTOM GRAD-CAM ----------------
 def generate_gradcam(model, image):
 
     model.eval()
@@ -81,7 +100,6 @@ def generate_gradcam(model, image):
     def forward_hook(module, input, output):
         activations.append(output)
 
-    # Hook last conv layer
     target_layer = model.conv_head
 
     handle_f = target_layer.register_forward_hook(forward_hook)
@@ -109,13 +127,11 @@ def generate_gradcam(model, image):
     handle_f.remove()
     handle_b.remove()
 
-    # Convert to heatmap
     heatmap = Image.fromarray(np.uint8(255 * cam)).resize((160,160))
     heatmap = np.array(heatmap) / 255.0
 
     img_np = np.array(image.resize((160,160))) / 255.0
 
-    # Overlay
     overlay = 0.6 * img_np + 0.4 * np.stack([heatmap]*3, axis=-1)
 
     return overlay
@@ -162,8 +178,8 @@ if file:
 
             c1,c2 = st.columns(2)
 
-            c1.metric("Fake", round(fake,3))
-            c2.metric("Real", round(real,3))
+            c1.metric("Fake Probability", round(fake,3))
+            c2.metric("Real Probability", round(real,3))
 
             if fake > real:
                 st.error("Fake Image")
