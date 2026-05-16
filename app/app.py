@@ -70,9 +70,7 @@ def detect_face(image):
         return None
 
     x1,y1,x2,y2 = boxes[0].astype(int)
-    face = image.crop((x1,y1,x2,y2))
-
-    return face
+    return image.crop((x1,y1,x2,y2))
 
 # ---------------- PREDICTION ----------------
 def predict(model,image):
@@ -85,7 +83,7 @@ def predict(model,image):
 
     return prob[0][0].item(), prob[0][1].item()
 
-# ---------------- FIXED GRAD-CAM ----------------
+# ---------------- GRAD-CAM ----------------
 def generate_gradcam(model, image):
 
     gradients = []
@@ -123,16 +121,15 @@ def generate_gradcam(model, image):
     handle_f.remove()
     handle_b.remove()
 
-    # 🔥 FIXED HEATMAP
-    heatmap_color = cm.jet(cam)[:, :, :3]
-
-    heatmap_color = np.array(
-        Image.fromarray((heatmap_color * 255).astype(np.uint8)).resize((160,160))
+    # ✅ FIXED HEATMAP
+    heatmap = cm.jet(cam)[:, :, :3]
+    heatmap = np.array(
+        Image.fromarray((heatmap * 255).astype(np.uint8)).resize((160,160))
     ) / 255.0
 
     img_np = np.array(image.resize((160,160))) / 255.0
 
-    overlay = 0.6 * img_np + 0.4 * heatmap_color
+    overlay = 0.6 * img_np + 0.4 * heatmap
     overlay = np.clip(overlay, 0, 1)
 
     return overlay
@@ -149,8 +146,7 @@ def extract_frames(video_path, num_frames=20):
 
     for i in ids:
         frame = reader.get_data(i)
-        frame = Image.fromarray(frame)
-        frames.append(frame)
+        frames.append(Image.fromarray(frame))
 
     return frames
 
@@ -219,7 +215,6 @@ if detection_type == "Video":
 
     if file:
 
-        # 🔥 FIX: convert to temp file
         tfile = tempfile.NamedTemporaryFile(delete=False)
         tfile.write(file.read())
 
@@ -227,7 +222,7 @@ if detection_type == "Video":
 
         if st.button("Detect Video"):
 
-            frames = extract_frames(tfile.name)
+            frames = extract_frames(tfile.name)  # ✅ FINAL FIX
 
             fake_scores = []
             real_scores = []
