@@ -2,11 +2,11 @@ streamlit
 torch
 torchvision
 timm
+facenet-pytorch
+grad-cam
 numpy
 pandas
 scikit-learn
-opencv-python-headless
+opencv-python-headless==4.8.0.76
 Pillow
 matplotlib
-facenet-pytorch
-grad-cam
