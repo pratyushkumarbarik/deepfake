@@ -10,7 +10,7 @@ import matplotlib.cm as cm
 import gdown
 import os
 import tempfile
-import imageio.v2 as imageio   # ✅ IMPORTANT FIX
+import imageio.v2 as imageio
 
 # ---------------- FIX RANDOMNESS ----------------
 torch.manual_seed(0)
@@ -115,7 +115,6 @@ def generate_gradcam(model, image):
     handle_f.remove()
     handle_b.remove()
 
-    # Heatmap fix
     heatmap = cm.jet(cam)[:, :, :3]
     heatmap = np.array(
         Image.fromarray((heatmap * 255).astype(np.uint8)).resize((160,160))
@@ -128,26 +127,24 @@ def generate_gradcam(model, image):
 
     return overlay
 
-# ---------------- VIDEO FRAME EXTRACTION ----------------
+# ---------------- VIDEO FRAME EXTRACTION (FINAL FIX) ----------------
 def extract_frames(video_path, num_frames=20):
 
     reader = imageio.get_reader(video_path, "ffmpeg")
 
-    try:
-        total = reader.count_frames()
-    except:
-        total = 100  # fallback
-
-    ids = np.linspace(0, total-1, num_frames).astype(int)
-
     frames = []
+    count = 0
 
-    for i in ids:
-        try:
-            frame = reader.get_data(i)
+    try:
+        for frame in reader:
             frames.append(Image.fromarray(frame))
-        except:
-            continue
+            count += 1
+
+            if count >= num_frames:
+                break
+
+    except:
+        pass
 
     reader.close()
     return frames
@@ -224,6 +221,10 @@ if detection_type == "Video":
         if st.button("Detect Video"):
 
             frames = extract_frames(tfile.name)
+
+            if len(frames) == 0:
+                st.error("Video could not be processed")
+                st.stop()
 
             fake_scores = []
             real_scores = []
