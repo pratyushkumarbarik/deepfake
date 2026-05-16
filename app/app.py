@@ -5,11 +5,11 @@ import numpy as np
 import random
 from PIL import Image
 from torchvision import transforms
+from torchvision.io import read_video
 from facenet_pytorch import MTCNN
 import matplotlib.cm as cm
 import gdown
 import os
-import imageio
 import tempfile
 
 # ---------------- FIX RANDOMNESS ----------------
@@ -63,24 +63,18 @@ face_detector = MTCNN(image_size=160, margin=10, device=device)
 
 # ---------------- FACE DETECTION ----------------
 def detect_face(image):
-
     boxes, _ = face_detector.detect(image)
-
     if boxes is None:
         return None
-
     x1,y1,x2,y2 = boxes[0].astype(int)
     return image.crop((x1,y1,x2,y2))
 
 # ---------------- PREDICTION ----------------
 def predict(model,image):
-
     img = transform(image).unsqueeze(0).to(device)
-
     with torch.no_grad():
         output = model(img)
         prob = torch.softmax(output,dim=1)
-
     return prob[0][0].item(), prob[0][1].item()
 
 # ---------------- GRAD-CAM ----------------
@@ -121,7 +115,6 @@ def generate_gradcam(model, image):
     handle_f.remove()
     handle_b.remove()
 
-    # ✅ Heatmap fix
     heatmap = cm.jet(cam)[:, :, :3]
     heatmap = np.array(
         Image.fromarray((heatmap * 255).astype(np.uint8)).resize((160,160))
@@ -137,18 +130,16 @@ def generate_gradcam(model, image):
 # ---------------- VIDEO FRAME EXTRACTION ----------------
 def extract_frames(video_path, num_frames=20):
 
-    reader = imageio.get_reader(video_path, format='ffmpeg')  # ✅ FINAL FIX
+    video, _, _ = read_video(video_path, pts_unit='sec')
 
-    total = reader.count_frames()
+    total = video.shape[0]
     ids = np.linspace(0, total-1, num_frames).astype(int)
 
     frames = []
-
     for i in ids:
-        frame = reader.get_data(i)
+        frame = video[i].numpy()
         frames.append(Image.fromarray(frame))
 
-    reader.close()
     return frames
 
 # ---------------- UI ----------------
@@ -200,7 +191,6 @@ if detection_type == "Image":
                 st.subheader("Prediction")
 
                 c1,c2 = st.columns(2)
-
                 c1.metric("Fake Probability", round(fake,3))
                 c2.metric("Real Probability", round(real,3))
 
@@ -252,7 +242,6 @@ if detection_type == "Video":
             st.subheader("Prediction")
 
             c1,c2 = st.columns(2)
-
             c1.metric("Fake Probability", round(fake_avg,3))
             c2.metric("Real Probability", round(real_avg,3))
 
